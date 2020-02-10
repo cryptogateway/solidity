@@ -575,13 +575,13 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		}
 		solAssert(indexedArgs.size() <= 4, "Too many indexed arguments.");
 		Whiskers templ(R"({
-			let <pos> := mload(<freeMemoryPointer>)
+			let <pos> := <fetchFreeMemoryPointer>
 			let <end> := <encode>(<pos> <nonIndexedArgs>)
 			<log>(<pos>, sub(<end>, <pos>) <indexedArgs>)
 		})");
 		templ("pos", m_context.newYulVariable());
 		templ("end", m_context.newYulVariable());
-		templ("freeMemoryPointer", to_string(CompilerUtils::freeMemoryPointer));
+		templ("fetchFreeMemoryPointer", fetchFreeMemoryPointer());
 		templ("encode", abi.tupleEncoder(nonIndexedArgTypes, nonIndexedParamTypes));
 		templ("nonIndexedArgs", nonIndexedArgs);
 		templ("log", "log" + to_string(indexedArgs.size()));
@@ -1105,7 +1105,7 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	bool useStaticCall = funKind == FunctionType::Kind::BareStaticCall || (funType.stateMutability() <= StateMutability::View && m_context.evmVersion().hasStaticCall());
 
 	bool haveReturndatacopy = m_context.evmVersion().supportsReturndata();
-	unsigned retSize = 0;
+	unsigned estimatedReturnSize = 0;
 	bool dynamicReturnSize = false;
 	TypePointers returnTypes;
 	if (!returnSuccessConditionAndReturndata)
@@ -1120,13 +1120,13 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 			{
 				solAssert(haveReturndatacopy, "");
 				dynamicReturnSize = true;
-				retSize = 0;
+				estimatedReturnSize = 0;
 				break;
 			}
 			else if (retType->decodingType())
-				retSize += retType->decodingType()->calldataEncodedSize();
+				estimatedReturnSize += retType->decodingType()->calldataEncodedSize();
 			else
-				retSize += retType->calldataEncodedSize();
+				estimatedReturnSize += retType->calldataEncodedSize();
 	}
 
 	TypePointers argumentTypes;
@@ -1147,8 +1147,8 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 		// (which we would have to subtract from the gas left)
 		// We could also just use MLOAD; POP right before the gas calculation, but the optimizer
 		// would remove that, so we use MSTORE here.
-		if (!funType.gasSet() && retSize > 0)
-			m_code << "mstore(add(" << fetchFreeMem() << ", " << to_string(retSize) << "), 0)\n";
+		if (!funType.gasSet() && estimatedReturnSize > 0)
+			m_code << "mstore(add(" << fetchFreeMemoryPointer() << ", " << to_string(estimatedReturnSize) << "), 0)\n";
 	}
 
 	ABIFunctions abi(m_context.evmVersion(), m_context.functionCollector());
@@ -1159,26 +1159,29 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 			if iszero(extcodesize(<address>)) { revert(0, 0) }
 		</checkExistence>
 
-		let <pos> := <freeMem>
+		let <pos> := <fetchFreeMemoryPointer>
+
 		mstore(<pos>, <shl28>(<funId>))
 		let <end> := <encodeArgs>(add(<pos>, 4) <argumentString>)
 
-		let <result> := <call>(<gas>, <address>, <value>, <pos>, sub(<end>, <pos>), <pos>, <retSize>)
-		if iszero(<result>) { <forwardingRevert> }
+		let <result> := <call>(<gas>, <address>, <?hasValue> <value>, </hasValue> <pos>, sub(<end>, <pos>), <pos>, <reservedReturnSize>)
+		if iszero(<result>) { <forwardingRevert>() }
 
 		<?dynamicReturnSize>
 			returndatacopy(<pos>, 0, returndatasize())
 		</dynamicReturnSize>
-		<allocate>
-		mstore(<freeMem>, add(<pos>, and(add(<retSize>, 0x1f), not(0x1f))))
-		<?returns> let <retvars> := </returns> <abiDecode>(<pos>, <retSize>)
+
+		mstore(<freeMemoryStart>, add(<pos>, and(add(<returnSize>, 0x1f), not(0x1f))))
+		<?returns> let <retVars> := </returns> <abiDecode>(<pos>, add(<pos>, <returnSize>))
 	)");
 	templ("pos", m_context.newYulVariable());
 	templ("end", m_context.newYulVariable());
 	templ("result", m_context.newYulVariable());
-	templ("freeMem", fetchFreeMem());
+	templ("freeMemoryStart", freeMemoryStart());
+	templ("fetchFreeMemoryPointer", fetchFreeMemoryPointer());
 	templ("shl28", m_utils.shiftLeftFunction(8 * (32 - 4)));
 	templ("funId", m_context.variablePart(_functionCall.expression(), "functionIdentifier"));
+	templ("address", m_context.variablePart(_functionCall.expression(), "address"));
 
 	// If the function takes arbitrary parameters or is a bare call, copy dynamic length data in place.
 	// Move arguments to memory, will not update the free memory pointer (but will update the memory
@@ -1190,23 +1193,25 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 		encodeInPlace = false;
 	bool encodeForLibraryCall = funKind == FunctionType::Kind::DelegateCall;
 	solUnimplementedAssert(!encodeInPlace, "");
-	solUnimplementedAssert(!funType.padArguments(), "");
+	solUnimplementedAssert(funType.padArguments(), "");
 	templ("encodeArgs", abi.tupleEncoder(argumentTypes, funType.parameterTypes(), encodeForLibraryCall));
 	templ("argumentString", argumentString);
 
-	// Output data will replace input data, unless we have ECRecover (then, output
-	// area will be 32 bytes just before input area).
-	templ("retSize", to_string(retSize));
 	solUnimplementedAssert(funKind != FunctionType::Kind::ECRecover, "");
 
-	if (isDelegateCall)
-		solAssert(!funType.valueSet(), "Value set for delegatecall");
-	else if (useStaticCall)
-		solAssert(!funType.valueSet(), "Value set for staticcall");
-	else if (funType.valueSet())
+	if (funType.valueSet())
+	{
+		solAssert(!isDelegateCall && !useStaticCall, "Value set for staticcall or delegatecall");
 		templ("value", m_context.variablePart(_functionCall.expression(), "value"));
+		templ("hasValue", true);
+	}
+	else if (useStaticCall || isDelegateCall)
+		templ("hasValue", false);
 	else
+	{
 		templ("value", "0");
+		templ("hasValue", true);
+	}
 
 	// Check that the target contract exists (has code) for non-low-level calls.
 	bool checkExistence = (funKind == FunctionType::Kind::External || funKind == FunctionType::Kind::DelegateCall);
@@ -1248,15 +1253,25 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	if (haveReturndatacopy)
 		templ("returnSize", "returndatasize()");
 	else
-		templ("returnSize", to_string(retSize));
+		templ("returnSize", to_string(estimatedReturnSize));
+
+	templ("reservedReturnSize", dynamicReturnSize ? "0" : to_string(estimatedReturnSize));
+
 	templ("abiDecode", abi.tupleDecoder(returnTypes, true));
 	templ("returns", !returnTypes.empty());
 	templ("retVars", m_context.variable(_functionCall));
+
+	m_code << templ.render();
 }
 
-string IRGeneratorForStatements::fetchFreeMem() const
+string IRGeneratorForStatements::freeMemoryStart()
 {
-	return "mload(" + to_string(CompilerUtils::freeMemoryPointer) + ")";
+	return to_string(CompilerUtils::freeMemoryPointer);
+}
+
+string IRGeneratorForStatements::fetchFreeMemoryPointer()
+{
+	return "mload(" + freeMemoryStart() + ")";
 }
 
 string IRGeneratorForStatements::expressionAsType(Expression const& _expression, Type const& _to)
