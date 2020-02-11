@@ -1713,7 +1713,7 @@ vector<tuple<string, TypePointer>> ArrayType::makeStackItems() const
 			else
 				return {std::make_tuple("offset", TypeProvider::uint256())};
 		case DataLocation::Memory:
-			return {std::make_tuple("offset", TypeProvider::uint256())};
+			return {std::make_tuple("mpos", TypeProvider::uint256())};
 		case DataLocation::Storage:
 			// byte offset inside storage value is omitted
 			return {std::make_tuple("slot", TypeProvider::uint256())};

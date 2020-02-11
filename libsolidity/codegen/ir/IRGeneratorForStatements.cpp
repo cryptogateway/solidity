@@ -984,7 +984,7 @@ void IRGeneratorForStatements::endVisit(IndexAccess const& _indexAccess)
 				string const memAddress =
 					m_utils.memoryArrayIndexAccessFunction(arrayType) +
 					"(" +
-					IRVariable(_indexAccess.baseExpression()).commaSeparatedList() +
+					IRVariable(_indexAccess.baseExpression()).part("mpos").name() +
 					", " +
 					expressionAsType(*_indexAccess.indexExpression(), *TypeProvider::uint256()) +
 					")";
@@ -1461,6 +1461,8 @@ void IRGeneratorForStatements::writeToLValue(IRLValue const& _lvalue, IRVariable
 				{
 					solAssert(_lvalue.type.sizeOnStack() == 1, "");
 					solAssert(dynamic_cast<ReferenceType const*>(&_lvalue.type), "");
+					auto const* valueReferenceType = dynamic_cast<ReferenceType const*>(&_value.type());
+					solAssert(valueReferenceType && valueReferenceType->dataStoredIn(DataLocation::Memory), "");
 					m_code << "mstore(" + _memory.address + ", " + _value.name() + ")\n";
 				}
 			},
