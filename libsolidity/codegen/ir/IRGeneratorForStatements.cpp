@@ -165,10 +165,8 @@ void IRGeneratorForStatements::endVisit(VariableDeclarationStatement const& _var
 			for (size_t i = 0; i < _varDeclStatement.declarations().size(); ++i)
 				if (auto const& decl = _varDeclStatement.declarations()[i])
 				{
-					if (tupleType->components()[i])
-						define(m_context.addLocalVariable(*decl), IRVariable(*expression).tupleComponent(i));
-					else
-						declare(m_context.addLocalVariable(*decl));
+					solAssert(tupleType->components()[i], "");
+					define(m_context.addLocalVariable(*decl), IRVariable(*expression).tupleComponent(i));
 				}
 		}
 		else
