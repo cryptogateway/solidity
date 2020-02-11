@@ -30,10 +30,12 @@ class Expression;
 /**
  * An IRVariable refers to a set of yul variables that correspond to the stack layout of a Solidity variable or expression
  * of a specific solidity type. If the solidity type occupies a single stack slot, the IRVariable refers to a single yul variable.
- * Otherwise the set of yul variables it refers to is (recursively) determined by ``Type::stackItems()``.
+ * Otherwise the set of yul variables it refers to is (recursively) determined by  @see ``Type::stackItems()``.
  * For example, an IRVariable referring to a dynamically sized calldata array will consist of two parts named
  * ``offset`` and ``length``, whereas an IRVariable referring to a statically sized calldata type, a storage reference
- * type or a memory reference type will contain a single unnamed part containing an offset.
+ * type or a memory reference type will contain a single unnamed part containing an offset. An IRVariable referring to
+ * a value type will contain a single unnamed part containing the value, an IRVariable referring to a tuple will
+ * have the typed tuple components as parts.
  */
 class IRVariable
 {

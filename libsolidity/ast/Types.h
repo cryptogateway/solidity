@@ -260,8 +260,11 @@ public:
 	/// i.e. it behaves differently in lvalue context and in value context.
 	virtual bool isValueType() const { return false; }
 	/// @returns a list of named and typed stack items that determine the layout of this type on the stack.
-	/// May contain an unnamed item with type ``nullptr`` which refers to a single stack slot.
-	/// All named stack items are typed and contribute their own ``stackItems()`` to the stack layout of this type.
+	/// A stack item either has an empty name and type ``nullptr`` referring to a single stack slot, or
+	/// has a non-empty name and a valid type referring to the stack layout of that type.
+	/// The complete layout of a type on the stack can be obtained from its stack items recursively as follows:
+	/// - Each unnamed stack item is untyped (its type is ``nullptr``) and contributes exactly one stack slot.
+	/// - Each named stack item is typed and contributes the stack slots given by the stack items of its type.
 	std::vector<std::tuple<std::string, TypePointer>> const& stackItems() const
 	{
 		if (!m_stackItems)
