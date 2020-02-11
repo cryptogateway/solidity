@@ -106,10 +106,10 @@ private:
 		std::string const& _right
 	);
 
-	/// Assigns the value of @a _value to the current lvalue. Resets the current lvalue.
-	void assignCurrentLValue(IRVariable const& _value);
-	/// @returns a fresh IR variable containing the value of the current lvalue.
-	IRVariable fetchCurrentLValue();
+	/// Assigns the value of @a _value to the lvalue @a _lvalue.
+	void writeToLValue(IRLValue const& _lvalue, IRVariable const& _value);
+	/// @returns a fresh IR variable containing the value of the lvalue @a _lvalue.
+	IRVariable readFromLValue(IRLValue const& _lvalue);
 
 	void setLValue(Expression const& _expression, IRLValue _lvalue);
 	void generateLoop(

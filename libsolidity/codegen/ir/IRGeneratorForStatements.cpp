@@ -142,14 +142,14 @@ void IRGeneratorForStatements::initializeStateVar(VariableDeclaration const& _va
 	if (_varDecl.value())
 	{
 		_varDecl.value()->accept(*this);
-		m_currentLValue.emplace(IRLValue{
+		writeToLValue(IRLValue{
 			*_varDecl.annotation().type,
 			IRLValue::Storage{
 				util::toCompactHexWithPrefix(m_context.storageLocationOfVariable(_varDecl).first),
 				m_context.storageLocationOfVariable(_varDecl).second
 			}
-		});
-		assignCurrentLValue(*_varDecl.value());
+		}, *_varDecl.value());
+		m_currentLValue.reset();
 	}
 }
 
@@ -199,7 +199,7 @@ bool IRGeneratorForStatements::visit(Assignment const& _assignment)
 		solAssert(type(_assignment.leftHandSide()) == *intermediateType, "");
 		solAssert(intermediateType->isValueType(), "Compound operators only available for value types.");
 
-		IRVariable leftIntermediate = fetchCurrentLValue();
+		IRVariable leftIntermediate = readFromLValue(*m_currentLValue);
 		m_code << value.name() << " := " << binaryOperation(
 			TokenTraits::AssignmentToBinaryOp(_assignment.assignmentOperator()),
 			*intermediateType,
@@ -208,7 +208,8 @@ bool IRGeneratorForStatements::visit(Assignment const& _assignment)
 		);
 	}
 
-	assignCurrentLValue(value);
+	writeToLValue(*m_currentLValue, value);
+	m_currentLValue.reset();
 	if (*_assignment.annotation().type != *TypeProvider::emptyTuple())
 		define(_assignment, value);
 
@@ -355,9 +356,10 @@ void IRGeneratorForStatements::endVisit(UnaryOperation const& _unaryOperation)
 					m_currentLValue.reset();
 				},
 				[&](auto const&) {
-					IRVariable zeroValue(m_currentLValue->type, m_context.newYulVariable());
+					IRVariable zeroValue(m_context.newYulVariable(), m_currentLValue->type);
 					define(zeroValue) << m_utils.zeroValueFunction(m_currentLValue->type) << "()\n";
-					assignCurrentLValue(zeroValue);
+					writeToLValue(*m_currentLValue, zeroValue);
+					m_currentLValue.reset();
 				}
 			},
 			m_currentLValue->kind
@@ -372,8 +374,8 @@ void IRGeneratorForStatements::endVisit(UnaryOperation const& _unaryOperation)
 		if (op == Token::Inc || op == Token::Dec)
 		{
 			solAssert(!!m_currentLValue, "LValue not retrieved.");
-			IRVariable modifiedValue(resultType, m_context.newYulVariable());
-			IRVariable originalValue = fetchCurrentLValue();
+			IRVariable modifiedValue(m_context.newYulVariable(), resultType);
+			IRVariable originalValue = readFromLValue(*m_currentLValue);
 
 			define(modifiedValue) <<
 				(op == Token::Inc ?
@@ -383,7 +385,8 @@ void IRGeneratorForStatements::endVisit(UnaryOperation const& _unaryOperation)
 				"(" <<
 				originalValue.name() <<
 				")\n";
-			assignCurrentLValue(modifiedValue);
+			writeToLValue(*m_currentLValue, modifiedValue);
+			m_currentLValue.reset();
 
 			define(_unaryOperation, _unaryOperation.isPrefixOperation() ? modifiedValue : originalValue);
 		}
@@ -575,7 +578,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		TypePointers nonIndexedArgTypes;
 		TypePointers nonIndexedParamTypes;
 		if (!event.isAnonymous())
-			define(indexedArgs.emplace_back(*TypeProvider::uint256(), m_context.newYulVariable())) <<
+			define(indexedArgs.emplace_back(m_context.newYulVariable(), *TypeProvider::uint256())) <<
 				formatNumber(u256(h256::Arith(keccak256(functionType->externalSignature())))) << "\n";
 		for (size_t i = 0; i < event.parameters().size(); ++i)
 		{
@@ -584,7 +587,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 			{
 				string value;
 				if (auto const& referenceType = dynamic_cast<ReferenceType const*>(paramTypes[i]))
-					define(indexedArgs.emplace_back(*TypeProvider::uint256(), m_context.newYulVariable())) <<
+					define(indexedArgs.emplace_back(m_context.newYulVariable(), *TypeProvider::uint256())) <<
 						m_utils.packedHashFunction({arg.annotation().type}, {referenceType}) <<
 						"(" <<
 						IRVariable(arg).commaSeparatedList() <<
@@ -1279,7 +1282,7 @@ IRVariable IRGeneratorForStatements::convert(IRVariable const& _from, Type const
 		return _from;
 	else
 	{
-		IRVariable converted(_to, m_context.newYulVariable());
+		IRVariable converted(m_context.newYulVariable(), _to);
 		define(converted, _from);
 		return converted;
 	}
@@ -1312,13 +1315,13 @@ void IRGeneratorForStatements::declareAssign(IRVariable const& _lhs, IRVariable 
 				m_code << (_declare ? "let ": "") << _lhs.part(stackItemName).name() << " := " << _rhs.part(stackItemName).name() << "\n";
 	else
 		m_code <<
-				(_declare ? "let ": "") <<
-				_lhs.commaSeparatedList() <<
-				" := " <<
-				m_context.utils().conversionFunction(_rhs.type(), _lhs.type()) <<
-				"(" <<
-				_rhs.commaSeparatedList() <<
-				")\n";
+			(_declare ? "let ": "") <<
+			_lhs.commaSeparatedList() <<
+			" := " <<
+			m_context.utils().conversionFunction(_rhs.type(), _lhs.type()) <<
+			"(" <<
+			_rhs.commaSeparatedList() <<
+			")\n";
 }
 void IRGeneratorForStatements::declare(IRVariable const& _var)
 {
@@ -1405,10 +1408,8 @@ void IRGeneratorForStatements::appendAndOrOperatorCode(BinaryOperation const& _b
 	m_code << "}\n";
 }
 
-void IRGeneratorForStatements::assignCurrentLValue(IRVariable const& _value)
+void IRGeneratorForStatements::writeToLValue(IRLValue const& _lvalue, IRVariable const& _value)
 {
-	solAssert(!!m_currentLValue, "No current LValue.");
-	auto const& type = m_currentLValue->type;
 	std::visit(
 		util::GenericVisitor{
 			[&](IRLValue::Storage const& _storage) {
@@ -1417,11 +1418,11 @@ void IRGeneratorForStatements::assignCurrentLValue(IRVariable const& _value)
 				if (std::holds_alternative<unsigned>(_storage.offset))
 					offset = std::get<unsigned>(_storage.offset);
 
-				IRVariable prepared(type, m_context.newYulVariable());
+				IRVariable prepared(m_context.newYulVariable(), _lvalue.type);
 				define(prepared, _value);
 
 				m_code <<
-					m_utils.updateStorageValueFunction(type, offset) <<
+					m_utils.updateStorageValueFunction(_lvalue.type, offset) <<
 					"(" <<
 					_storage.slot <<
 					(
@@ -1434,20 +1435,20 @@ void IRGeneratorForStatements::assignCurrentLValue(IRVariable const& _value)
 					")\n";
 			},
 			[&](IRLValue::Memory const& _memory) {
-				if (type.isValueType())
+				if (_lvalue.type.isValueType())
 				{
-					IRVariable prepared(type, m_context.newYulVariable());
+					IRVariable prepared(m_context.newYulVariable(), _lvalue.type);
 					define(prepared, _value);
 
 					// TODO: does this actually need cleanup?
 
 					if (_memory.byteArrayElement)
 					{
-						solAssert(type == *TypeProvider::byte(), "");
+						solAssert(_lvalue.type == *TypeProvider::byte(), "");
 						m_code << "mstore8(" + _memory.address + ", byte(0, " + prepared.commaSeparatedList() + "))\n";
 					}
 					else
-						m_code << m_utils.writeToMemoryFunction(type) <<
+						m_code << m_utils.writeToMemoryFunction(_lvalue.type) <<
 							"(" <<
 							_memory.address <<
 							", " <<
@@ -1456,8 +1457,8 @@ void IRGeneratorForStatements::assignCurrentLValue(IRVariable const& _value)
 				}
 				else
 				{
-					solAssert(type.sizeOnStack() == 1, "");
-					solAssert(dynamic_cast<ReferenceType const*>(&type), "");
+					solAssert(_lvalue.type.sizeOnStack() == 1, "");
+					solAssert(dynamic_cast<ReferenceType const*>(&_lvalue.type), "");
 					m_code << "mstore(" + _memory.address + ", " + _value.name() + ")\n";
 				}
 			},
@@ -1468,30 +1469,24 @@ void IRGeneratorForStatements::assignCurrentLValue(IRVariable const& _value)
 				{
 					size_t idx = components.size() - i - 1;
 					if (components[idx])
-					{
-						m_currentLValue.emplace(std::move(*components[idx]));
-						assignCurrentLValue(_value.tupleComponent(idx));
-					}
+						writeToLValue(*components[idx], _value.tupleComponent(idx));
 				}
 			}
 		},
-		m_currentLValue->kind
+		_lvalue.kind
 	);
-	m_currentLValue.reset();
 }
 
-IRVariable IRGeneratorForStatements::fetchCurrentLValue()
+IRVariable IRGeneratorForStatements::readFromLValue(IRLValue const& _lvalue)
 {
-	solAssert(!!m_currentLValue, "No current LValue.");
-	auto const& type = m_currentLValue->type;
-	IRVariable result{type, m_context.newYulVariable()};
+	IRVariable result{m_context.newYulVariable(), _lvalue.type};
 	std::visit(GenericVisitor{
 		[&](IRLValue::Storage const& _storage) {
-			if (!type.isValueType())
+			if (!_lvalue.type.isValueType())
 				define(result) << _storage.slot << "\n";
 			else if (std::holds_alternative<string>(_storage.offset))
 				define(result) <<
-					m_utils.readFromStorageDynamic(type, false) <<
+					m_utils.readFromStorageDynamic(_lvalue.type, false) <<
 					"(" <<
 					_storage.slot <<
 					", " <<
@@ -1499,7 +1494,7 @@ IRVariable IRGeneratorForStatements::fetchCurrentLValue()
 					")\n";
 			else
 				define(result) <<
-					m_utils.readFromStorage(type, std::get<unsigned>(_storage.offset), false) <<
+					m_utils.readFromStorage(_lvalue.type, std::get<unsigned>(_storage.offset), false) <<
 					"(" <<
 					_storage.slot <<
 					")\n";
@@ -1507,13 +1502,13 @@ IRVariable IRGeneratorForStatements::fetchCurrentLValue()
 		[&](IRLValue::Memory const& _memory) {
 			if (_memory.byteArrayElement)
 				define(result) <<
-					m_utils.cleanupFunction(type) <<
+					m_utils.cleanupFunction(_lvalue.type) <<
 					"(mload(" <<
 					_memory.address <<
 					"))\n";
-			else if (type.isValueType())
+			else if (_lvalue.type.isValueType())
 				define(result) <<
-					m_utils.readFromMemory(type) <<
+					m_utils.readFromMemory(_lvalue.type) <<
 					"(" <<
 					_memory.address <<
 					")\n";
@@ -1524,24 +1519,21 @@ IRVariable IRGeneratorForStatements::fetchCurrentLValue()
 			define(result, _stack.variable);
 		},
 		[&](IRLValue::Tuple const&) {
-			solAssert(false, "Attempted to fetch tuple expression from lvalue.");
+			solAssert(false, "Attempted to read from tuple lvalue.");
 		}
-	}, m_currentLValue->kind);
+	}, _lvalue.kind);
 	return result;
 }
 
 void IRGeneratorForStatements::setLValue(Expression const& _expression, IRLValue _lvalue)
 {
 	solAssert(!m_currentLValue, "");
-	m_currentLValue.emplace(std::move(_lvalue));
 
-	if (!_expression.annotation().lValueRequested)
-	{
+	if (_expression.annotation().lValueRequested)
+		m_currentLValue.emplace(std::move(_lvalue));
+	else
 		// Only define the expression, if it will not be written to.
-		define(_expression, fetchCurrentLValue());
-		m_currentLValue.reset();
-	}
-
+		define(_expression, readFromLValue(_lvalue));
 }
 
 void IRGeneratorForStatements::generateLoop(

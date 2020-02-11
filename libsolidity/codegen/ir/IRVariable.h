@@ -28,24 +28,27 @@ class Type;
 class Expression;
 
 /**
- * An IRVariable refers to a set of yul variables that correspond to the stack layout of a solidity variable or expression
+ * An IRVariable refers to a set of yul variables that correspond to the stack layout of a Solidity variable or expression
  * of a specific solidity type. If the solidity type occupies a single stack slot, the IRVariable refers to a single yul variable.
  * Otherwise the set of yul variables it refers to is (recursively) determined by ``Type::stackItems()``.
+ * For example, an IRVariable referring to a dynamically sized calldata array will consist of two parts named
+ * ``offset`` and ``length``, whereas an IRVariable referring to a statically sized calldata type, a storage reference
+ * type or a memory reference type will contain a single unnamed part containing an offset.
  */
 class IRVariable
 {
 public:
+	/// IR variable with explicit name @a _name and type @a _type.
+	IRVariable(std::string _name, Type const& _type);
 	/// IR variable referring to the declaration @a _decl.
 	explicit IRVariable(VariableDeclaration const& _decl);
-	/// IR variable with explicit name @a _name and type @a _type.
-	IRVariable(Type const& _type, std::string _name);
 	/// IR variable referring to the expression @a _expr.
 	IRVariable(Expression const& _expression);
 
 	/// @returns the name of the variable, if it occupies a single stack slot (otherwise throws).
 	std::string name() const;
 
-	/// @returns a comma-separated list of the stack components of the variable.
+	/// @returns a comma-separated list of the stack slots of the variable.
 	std::string commaSeparatedList() const;
 
 	/// @returns an IRVariable referring to the tuple component @a _i of a tuple variable.
@@ -60,11 +63,14 @@ public:
 	/// in ``m_type.stackItems()`` and may again occupy multiple stack slots.
 	IRVariable part(std::string const& _slot) const;
 private:
-	/// @returns a vector containing the names of the stack components of the variable.
-	std::vector<std::string> stackComponents() const;
+	/// @returns a vector containing the names of the stack slots of the variable.
+	std::vector<std::string> stackSlots() const;
 
-	Type const& m_type;
+	/// @returns a name consisting of the base name appended with an underscore and @æ _suffix,
+	/// unless @a _suffix is empty, in which case the base name itself is returned.
+	std::string suffixedName(std::string const& _suffix) const;
 	std::string m_baseName;
+	Type const& m_type;
 };
 
 
