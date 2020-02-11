@@ -1985,7 +1985,7 @@ string YulUtilFunctions::readFromMemoryOrCalldata(Type const& _type, bool _fromC
 			function <functionName>(memPtr) -> value {
 				value := <load>(memPtr)
 				<?needsValidation>
-					value := <validate>(value)
+					<validate>(value)
 				</needsValidation>
 			}
 		)")
