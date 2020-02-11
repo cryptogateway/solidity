@@ -80,6 +80,11 @@ string IRVariable::commaSeparatedList() const
 	return joinHumanReadable(stackSlots());
 }
 
+string IRVariable::commaSeparatedListPrefixed() const
+{
+	return joinHumanReadablePrefixed(stackSlots());
+}
+
 string IRVariable::name() const
 {
 	solAssert(m_type.sizeOnStack() == 1, "");

@@ -896,7 +896,7 @@ void IRGeneratorForStatements::endVisit(MemberAccess const& _memberAccess)
 	{
 		auto const& type = dynamic_cast<FixedBytesType const&>(*_memberAccess.expression().annotation().type);
 		if (member == "length")
-			define(_memberAccess) << type.numBytes() << "\n";
+			define(_memberAccess) << to_string(type.numBytes()) << "\n";
 		else
 			solAssert(false, "Illegal fixed bytes member.");
 		break;
@@ -968,8 +968,8 @@ void IRGeneratorForStatements::endVisit(IndexAccess const& _indexAccess)
 				("slot", slot)
 				("offset", offset)
 				("indexFunc", m_utils.storageArrayIndexAccessFunction(arrayType))
-				("array", IRVariable(_indexAccess.baseExpression()).commaSeparatedList())
-				("index", IRVariable(*_indexAccess.indexExpression()).commaSeparatedList())
+				("array", IRVariable(_indexAccess.baseExpression()).part("slot").name())
+				("index", IRVariable(*_indexAccess.indexExpression()).name())
 				.render();
 
 				setLValue(_indexAccess, IRLValue{
@@ -1045,7 +1045,7 @@ void IRGeneratorForStatements::endVisit(Identifier const& _identifier)
 		return;
 	}
 	else if (FunctionDefinition const* functionDef = dynamic_cast<FunctionDefinition const*>(declaration))
-		define(_identifier) << m_context.virtualFunction(*functionDef).id() << "\n";
+		define(_identifier) << to_string(m_context.virtualFunction(*functionDef).id()) << "\n";
 	else if (VariableDeclaration const* varDecl = dynamic_cast<VariableDeclaration const*>(declaration))
 	{
 		// TODO for the constant case, we have to be careful:
@@ -1155,12 +1155,13 @@ void IRGeneratorForStatements::appendExternalFunctionCall(
 	}
 
 	TypePointers argumentTypes;
-	string argumentString;
+	vector<string> argumentStrings;
 	for (auto const& arg: _arguments)
 	{
 		argumentTypes.emplace_back(&type(*arg));
-		argumentString += IRVariable(*arg).commaSeparatedList();
+		argumentStrings.emplace_back(IRVariable(*arg).commaSeparatedList());
 	}
+	string argumentString = joinHumanReadable(argumentStrings);
 
 	solUnimplementedAssert(funKind != FunctionType::Kind::ECRecover, "");
 
@@ -1331,7 +1332,8 @@ void IRGeneratorForStatements::declareAssign(IRVariable const& _lhs, IRVariable 
 }
 void IRGeneratorForStatements::declare(IRVariable const& _var)
 {
-	m_code << "let " << _var.commaSeparatedList() << "\n";
+	if (_var.type().sizeOnStack() > 0)
+		m_code << "let " << _var.commaSeparatedList() << "\n";
 }
 
 void IRGeneratorForStatements::appendSimpleUnaryOperation(UnaryOperation const& _operation, Expression const& _expr)
@@ -1424,9 +1426,6 @@ void IRGeneratorForStatements::writeToLValue(IRLValue const& _lvalue, IRVariable
 				if (std::holds_alternative<unsigned>(_storage.offset))
 					offset = std::get<unsigned>(_storage.offset);
 
-				IRVariable prepared(m_context.newYulVariable(), _lvalue.type);
-				define(prepared, _value);
-
 				m_code <<
 					m_utils.updateStorageValueFunction(_lvalue.type, offset) <<
 					"(" <<
@@ -1436,8 +1435,7 @@ void IRGeneratorForStatements::writeToLValue(IRLValue const& _lvalue, IRVariable
 						(", " + std::get<string>(_storage.offset)) :
 						""
 					) <<
-					", " <<
-					prepared.commaSeparatedList() <<
+					_value.commaSeparatedListPrefixed() <<
 					")\n";
 			},
 			[&](IRLValue::Memory const& _memory) {
@@ -1445,8 +1443,6 @@ void IRGeneratorForStatements::writeToLValue(IRLValue const& _lvalue, IRVariable
 				{
 					IRVariable prepared(m_context.newYulVariable(), _lvalue.type);
 					define(prepared, _value);
-
-					// TODO: does this actually need cleanup?
 
 					if (_memory.byteArrayElement)
 					{

@@ -55,6 +55,10 @@ public:
 	/// @returns a comma-separated list of the stack slots of the variable.
 	std::string commaSeparatedList() const;
 
+	/// @returns a comma-separated list of the stack slots of the variable that is
+	/// prefixed with a comma, unless it is emtpy.
+	std::string commaSeparatedListPrefixed() const;
+
 	/// @returns an IRVariable referring to the tuple component @a _i of a tuple variable.
 	IRVariable tupleComponent(std::size_t _i) const;
 
