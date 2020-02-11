@@ -111,6 +111,8 @@ private:
 	/// @returns a fresh IR variable containing the value of the lvalue @a _lvalue.
 	IRVariable readFromLValue(IRLValue const& _lvalue);
 
+	/// Stores the given @a _lvalue in m_currentLValue, if it will be written to (lValueRequested). Otherwise
+	/// defines the expression @a _expression by reading the value from @a _lvalue.
 	void setLValue(Expression const& _expression, IRLValue _lvalue);
 	void generateLoop(
 		Statement const& _body,

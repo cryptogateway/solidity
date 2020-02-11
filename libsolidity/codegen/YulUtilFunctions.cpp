@@ -1796,7 +1796,8 @@ string YulUtilFunctions::conversionFunctionSpecial(Type const& _from, Type const
 			fromTuple && toTuple && fromTuple->components().size() == toTuple->components().size()
 		)
 		{
-			size_t sourceStackSize = 0, destStackSize = 0;
+			size_t sourceStackSize = 0;
+			size_t destStackSize = 0;
 			std::string conversions;
 			for (size_t i = 0; i < fromTuple->components().size(); ++i)
 			{

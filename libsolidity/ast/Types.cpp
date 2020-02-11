@@ -2000,7 +2000,7 @@ vector<tuple<string, TypePointer>> ContractType::makeStackItems() const
 	if (m_super)
 		return {};
 	else
-		return {make_tuple("address", isPayable() ? TypeProvider::payableAddress() :TypeProvider::address())};
+		return {make_tuple("address", isPayable() ? TypeProvider::payableAddress() : TypeProvider::address())};
 }
 
 void StructType::clearCache() const

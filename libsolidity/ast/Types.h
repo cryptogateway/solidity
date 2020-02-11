@@ -271,7 +271,7 @@ public:
 			m_stackItems = makeStackItems();
 		return *m_stackItems;
 	}
-	/// Total number of stack slots occupied by this time. This is the sum of ``sizeOnStack`` of all ``stackItems()``.
+	/// Total number of stack slots occupied by this type. This is the sum of ``sizeOnStack`` of all ``stackItems()``.
 	unsigned sizeOnStack() const
 	{
 		if (!m_stackSize)
@@ -363,7 +363,7 @@ protected:
 		return MemberList::MemberMap();
 	}
 	/// Generates the stack items to be returned by ``stackItems()``. Defaults
-	/// To exactly one unnamed and untyped stack item referring to a single stack slot.
+	/// to exactly one unnamed and untyped stack item referring to a single stack slot.
 	virtual std::vector<std::tuple<std::string, TypePointer>> makeStackItems() const
 	{
 		return {std::make_tuple(std::string(), nullptr)};
