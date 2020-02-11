@@ -69,8 +69,6 @@ public:
 	}
 
 
-	IRVariable const& addFunctionParameter(VariableDeclaration const& _varDecl);
-
 	IRVariable const& addLocalVariable(VariableDeclaration const& _varDecl);
 	bool isLocalVariable(VariableDeclaration const& _varDecl) const { return m_localVariables.count(&_varDecl); }
 	IRVariable const& localVariable(VariableDeclaration const& _varDecl);

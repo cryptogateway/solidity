@@ -31,23 +31,10 @@ using namespace solidity;
 using namespace solidity::util;
 using namespace solidity::frontend;
 
-IRVariable const& IRGenerationContext::addFunctionParameter(VariableDeclaration const& _varDecl)
-{
-	auto const& [it, didInsert] = m_localVariables.emplace(
-		std::piecewise_construct,
-		std::forward_as_tuple(&_varDecl),
-		std::forward_as_tuple(_varDecl)
-	);
-	solAssert(didInsert, "Local variable added multiple times.");
-	return it->second;
-}
-
 IRVariable const& IRGenerationContext::addLocalVariable(VariableDeclaration const& _varDecl)
 {
 	auto const& [it, didInsert] = m_localVariables.emplace(
-		std::piecewise_construct,
-		std::forward_as_tuple(&_varDecl),
-		std::forward_as_tuple(_varDecl)
+		std::make_pair(&_varDecl, IRVariable{_varDecl})
 	);
 	solAssert(didInsert, "Local variable added multiple times.");
 	return it->second;

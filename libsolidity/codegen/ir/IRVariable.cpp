@@ -24,8 +24,8 @@ using namespace solidity;
 using namespace solidity::frontend;
 using namespace solidity::util;
 
-IRVariable::IRVariable(std::string _name, Type const& _type):
-	m_baseName(std::move(_name)), m_type(_type)
+IRVariable::IRVariable(std::string _baseName, Type const& _type):
+	m_baseName(std::move(_baseName)), m_type(_type)
 {
 }
 
@@ -65,12 +65,12 @@ vector<string> IRVariable::stackSlots() const
 		{
 			solAssert(!itemName.empty(), "");
 			solAssert(m_type != *itemType, "");
-			result += part(itemName).stackSlots();
+			result += IRVariable{suffixedName(itemName), *itemType}.stackSlots();
 		}
 		else
 		{
 			solAssert(itemName.empty(), "");
-			result.emplace_back(suffixedName(itemName));
+			result.emplace_back(m_baseName);
 		}
 	return result;
 }
