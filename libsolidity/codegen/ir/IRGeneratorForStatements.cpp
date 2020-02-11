@@ -149,7 +149,6 @@ void IRGeneratorForStatements::initializeStateVar(VariableDeclaration const& _va
 				m_context.storageLocationOfVariable(_varDecl).second
 			}
 		}, *_varDecl.value());
-		m_currentLValue.reset();
 	}
 }
 
