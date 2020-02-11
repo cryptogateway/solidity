@@ -550,7 +550,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		define(_functionCall) <<
 			m_context.internalDispatch(functionType->parameterTypes().size(), functionType->returnParameterTypes().size()) <<
 			"(" <<
-			IRVariable(_functionCall.expression()).name() <<
+			IRVariable(_functionCall.expression()).part("functionIdentifier").name() <<
 			joinHumanReadablePrefixed(args) <<
 			")\n";
 		break;
@@ -662,7 +662,8 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 
 		define(_functionCall) <<
 			"keccak256(" <<
-			m_utils.arrayDataAreaFunction(*arrayType) + "(" <<
+			m_utils.arrayDataAreaFunction(*arrayType) <<
+			"(" <<
 			array.commaSeparatedList() <<
 			"), " <<
 			m_utils.arrayLengthFunction(*arrayType) <<
@@ -678,7 +679,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 		define(_functionCall) <<
 			m_utils.storageArrayPopFunction(arrayType) <<
 			"(" <<
-			IRVariable(memberAccessExpression).commaSeparatedList() <<
+			IRVariable(_functionCall.expression()).commaSeparatedList() <<
 			")\n";
 		break;
 	}
@@ -692,7 +693,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 			auto offsetName = m_context.newYulVariable();
 			m_code << "let " << slotName << ", " << offsetName << " := " <<
 				m_utils.storageArrayPushZeroFunction(arrayType) <<
-				"(" << IRVariable(memberAccessExpression).commaSeparatedList() << ")\n";
+				"(" << IRVariable(_functionCall.expression()).commaSeparatedList() << ")\n";
 			setLValue(_functionCall, IRLValue{
 				*arrayType.baseType(),
 				IRLValue::Storage{
@@ -707,7 +708,7 @@ void IRGeneratorForStatements::endVisit(FunctionCall const& _functionCall)
 			m_code <<
 				m_utils.storageArrayPushFunction(arrayType) <<
 				"(" <<
-				IRVariable(memberAccessExpression).commaSeparatedList() <<
+				IRVariable(_functionCall.expression()).commaSeparatedList() <<
 				", " <<
 				argument.commaSeparatedList() <<
 				")\n";
@@ -749,7 +750,7 @@ void IRGeneratorForStatements::endVisit(MemberAccess const& _memberAccess)
 				solAssert(false, "Contract member is neither variable nor function.");
 
 			define(IRVariable(_memberAccess).part("address"), _memberAccess.expression());
-			define(_memberAccess) << formatNumber(identifier) << "\n";
+			define(IRVariable(_memberAccess).part("functionIdentifier")) << formatNumber(identifier) << "\n";
 		}
 		else
 			solAssert(false, "Invalid member access in contract");
@@ -768,8 +769,13 @@ void IRGeneratorForStatements::endVisit(MemberAccess const& _memberAccess)
 				expressionAsType(_memberAccess.expression(), *TypeProvider::address()) <<
 				")\n";
 		else if (set<string>{"send", "transfer"}.count(member))
+		{
 			solAssert(dynamic_cast<AddressType const&>(*_memberAccess.expression().annotation().type).stateMutability() == StateMutability::Payable, "");
-		else if (!set<string>{"call", "callcode", "delegatecall", "staticcall"}.count(member))
+			define(IRVariable{_memberAccess}.part("address"), _memberAccess.expression());
+		}
+		else if (set<string>{"call", "callcode", "delegatecall", "staticcall"}.count(member))
+			define(IRVariable{_memberAccess}.part("address"), _memberAccess.expression());
+		else
 			solAssert(false, "Invalid member access to address");
 		break;
 	}
@@ -877,7 +883,10 @@ void IRGeneratorForStatements::endVisit(MemberAccess const& _memberAccess)
 				}
 		}
 		else if (member == "pop" || member == "push")
+		{
 			solAssert(type.location() == DataLocation::Storage, "");
+			define(IRVariable{_memberAccess}.part("slot"), IRVariable{_memberAccess.expression()}.part("slot"));
+		}
 		else
 			solAssert(false, "Invalid array member access.");
 

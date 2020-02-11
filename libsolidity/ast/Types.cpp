@@ -1705,12 +1705,20 @@ u256 ArrayType::storageSize() const
 
 vector<tuple<string, TypePointer>> ArrayType::makeStackItems() const
 {
-	if (m_location == DataLocation::CallData && isDynamicallySized())
-		return {std::make_tuple("offset", TypeProvider::uint256()), std::make_tuple("length", TypeProvider::uint256())};
-	else
-		// storage slot or memory offset
-		// byte offset inside storage value is omitted
-		return {std::make_tuple(string(), nullptr)};
+	switch (m_location)
+	{
+		case DataLocation::CallData:
+			if (isDynamicallySized())
+				return {std::make_tuple("offset", TypeProvider::uint256()), std::make_tuple("length", TypeProvider::uint256())};
+			else
+				return {std::make_tuple("offset", TypeProvider::uint256())};
+		case DataLocation::Memory:
+			return {std::make_tuple("offset", TypeProvider::uint256())};
+		case DataLocation::Storage:
+			// byte offset inside storage value is omitted
+			return {std::make_tuple("slot", TypeProvider::uint256())};
+	}
+	solAssert(false, "");
 }
 
 string ArrayType::toString(bool _short) const
@@ -2927,12 +2935,12 @@ vector<tuple<string, TypePointer>> FunctionType::makeStackItems() const
 		slots = {make_tuple("address", TypeProvider::address())};
 		break;
 	case Kind::Internal:
-		slots = {make_tuple(string(), nullptr)};
+		slots = {make_tuple("functionIdentifier", TypeProvider::uint256())};
 		break;
 	case Kind::ArrayPush:
 	case Kind::ArrayPop:
 	case Kind::ByteArrayPush:
-		slots = {make_tuple(string(), nullptr)};
+		slots = {make_tuple("slot", TypeProvider::uint256())};
 		break;
 	default:
 		break;
